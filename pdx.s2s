@@ -1,0 +1,102 @@
+#include "../util/LogUtilities.s2s"
+#include "../util/ChannelUtilities.s2s"
+#include "../util/FileUtilities.s2s"
+#include "ExtractionUtilities.s2s"
+
+
+' Move cursor 1 prior to first FRAME, cursor2 to exclude the last FRAME in a run from flash
+
+var hData%;
+var hTxt;
+var sInit$ := "";
+var iCode%[4];
+var iType%;
+var stimChannel% := 4;
+var frameChannel% := 1;
+var doChannel% := 6;
+var tlast := -1;
+var tStimOn := -1;
+var tRise, tFall;
+var iStatus%;
+var onTimes[128];
+var nonTimes% := 0, nFrames% := 0;
+var pdTimes[128];
+var npdTimes% := 0;
+var fCount% :=0;
+var tPending := -1; ' >0 when a pending pulse found.
+var tStart, tEnd;
+var tAvg, tDev;
+var i%;
+tStart := Cursor(1);
+tEnd := Cursor(2);
+PrintLog("Search from %f to %f\n", tStart, tEnd);
+
+
+' Get data file. The "current" view must be a time view, otherwise we bail. 
+hData% := View(0);
+if (ViewKind(hData%) <> 0) then
+    Message("Current view must be a time view.");
+    halt;
+endif
+
+'iStatus% := FindRisingEdge%(stimChannel%, tlast, tStimOn);
+'if (iStatus% < 0) then
+'    Message("No stim up signal found");
+'    halt;
+'endif
+'
+'tlast := tStimOn;
+
+tlast := tStart;
+while (FindPulseUp%(frameChannel%, tlast, tRise, tFall) > 0 and tlast < tEnd) do
+    nFrames% := nFrames% + 1;
+    tlast := tFall;
+    ' nFrames = 1, 3, 5, ... 
+    if ((nFrames% mod 2) = 1) then
+        tPending := tRise;
+    else
+        if (tPending > 0) then
+            onTimes[nonTimes%] := tPending;
+            nonTimes% := nonTimes% + 1;
+            'PrintLog("Frame at %f\n", tPending);
+            tPending := -1;
+        endif
+    endif
+wend
+
+PrintLog("Found %d frame onset\n", nonTimes%);
+
+' set up active cursor to search with
+Cursor(0, tStart);
+CursorActive(0, 8, 9, 0, "", "", 2.5);
+
+
+' search
+
+tlast := CursorSearch(0);
+while tlast > 0 and tlast < tEnd do
+    pdTimes[npdTimes%] := tlast;
+    npdTimes% := npdTimes% + 1;
+    'PrintLog("Found t=%f\n", tlast);
+    Cursor(0, tlast+0.1);
+    tlast := CursorSearch(0);
+wend
+
+PrintLog("Found %d pd times\n", npdTimes%);
+
+if nonTimes% <> npdTimes% then
+    PrintLog("Need same number of on times and pd times. Check position of cursor1!");
+else
+    ArrSub(pdTimes[0:npdTimes%], onTimes[0:nonTimes%]);
+    ArrSum(pdTimes[0:npdTimes%], tAvg, tDev);
+    PrintLog("Avg %f +- %f\n", tAvg, tDev);
+    ' alternate, without first value
+    ArrSum(pdTimes[1:npdTimes%-1], tAvg, tDev);
+    PrintLog("Alt %f +- %f\n", tAvg, tDev);
+
+    for i% := 0 to nOnTimes%-1 do
+        PrintLog("%d %f\n", i%, pdTimes[i%]);
+    next;
+endif
+    
+
