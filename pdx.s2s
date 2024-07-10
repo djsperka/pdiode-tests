@@ -20,7 +20,8 @@ var tRise, tFall;
 var iStatus%;
 var onTimes[128];
 var nonTimes% := 0, nFrames% := 0;
-var pdTimes[128];
+var pdTimes[1000];
+var pdTemp[1000];
 var npdTimes% := 0;
 var fCount% :=0;
 var tPending := -1; ' >0 when a pending pulse found.
@@ -66,26 +67,54 @@ wend
 
 PrintLog("Found %d frame onset\n", nonTimes%);
 
-' set up active cursor to search with
+' set up active cursor to search for negative-going threshold. 
+' May have to set the threshold for the screen/diode combination.
 Cursor(0, tStart);
-CursorActive(0, 8, 9, 0, "", "", 2.5);
+CursorActive(0, 8, 9, 0, "", "", .616);
 
 
-' search
+' search through data from dev. desktop flat screen. Individual 
+' frame re-draws are not seen as there is no blanking period. So
+' we expect just one downward pulse within 0.1s. 
 
 tlast := CursorSearch(0);
 while tlast > 0 and tlast < tEnd do
     pdTimes[npdTimes%] := tlast;
     npdTimes% := npdTimes% + 1;
     'PrintLog("Found t=%f\n", tlast);
-    Cursor(0, tlast+0.1);
+    Cursor(0, tlast+0.001);
     tlast := CursorSearch(0);
 wend
 
 PrintLog("Found %d pd times\n", npdTimes%);
 
 if nonTimes% <> npdTimes% then
-    PrintLog("Need same number of on times and pd times. Check position of cursor1!");
+    PrintLog("Need same number of on times and pd times. Look for first pd following FRAME.\n");
+    var ipd% :=0;
+    for i% := 0 to nOnTimes%-1 do
+        ' find first pdTime that is greater than onTimes[i%]
+        PrintLog("%d onTime %f\n", i%, onTimes[i%]);
+        while ipd% < npdTimes% do
+            if pdTimes[ipd%] > onTimes[i%] then
+                pdTemp[i%] := pdTimes[ipd%];
+                PrintLog("Got %f diff %f\n", pdTemp[i%],pdTemp[i%]-onTimes[i%]);
+                break;
+            else
+                PrintLog("Nope %d %f\n", ipd%, pdTimes[ipd%]);
+            endif
+            ipd% := ipd% + 1;
+        wend
+    next
+    
+    ' compute avg difference between pd and FRAME.
+    ArrSub(pdTemp[0:nonTimes%], onTimes[0:nonTimes%]);
+    ArrSum(pdTemp[0:nonTimes%], tAvg, tDev);
+    PrintLog("Avg %f +- %f\n", tAvg, tDev);
+    for i% := 0 to nOnTimes%-1 do
+        PrintLog("%d diff %f\n", i%, pdTemp[i%]);
+    next
+    
+
 else
     ArrSub(pdTimes[0:npdTimes%], onTimes[0:nonTimes%]);
     ArrSum(pdTimes[0:npdTimes%], tAvg, tDev);
